@@ -1,0 +1,3 @@
+data/gallery.db
+uploads/*
+!uploads/.gitkeep
