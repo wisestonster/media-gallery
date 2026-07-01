@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/session.php';
+startSecureSession();
 if (empty($_SESSION['user_id'])) {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized']);
@@ -25,13 +26,25 @@ if (empty($_FILES['file']) || $errCode !== UPLOAD_ERR_OK) {
     exit;
 }
 
-$allowed = ['image/', 'video/', 'audio/'];
+// 확장자는 신뢰할 수 없는 원본 파일명이 아니라, 실제 검증된 MIME 타입에서만 결정한다.
+// (그렇지 않으면 이미지 시그니처 뒤에 PHP 코드를 붙인 폴리글랏 파일을 .php로 업로드해
+//  코드 실행으로 이어질 수 있음)
+$mimeToExt = [
+    'image/jpeg' => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif',
+    'image/webp' => 'webp',
+    'video/mp4'  => 'mp4',
+    'video/webm' => 'webm',
+    'video/quicktime' => 'mov',
+    'audio/mpeg' => 'mp3',
+    'audio/wav'  => 'wav',
+    'audio/ogg'  => 'ogg',
+    'audio/mp4'  => 'm4a',
+];
+
 $mime = mime_content_type($_FILES['file']['tmp_name']);
-$valid = false;
-foreach ($allowed as $prefix) {
-    if (str_starts_with($mime, $prefix)) { $valid = true; break; }
-}
-if (!$valid) {
+if (!isset($mimeToExt[$mime])) {
     http_response_code(400);
     echo json_encode(['error' => 'File type not allowed']);
     exit;
@@ -42,8 +55,8 @@ if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0755, true);
 }
 
-$ext = pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION);
-$filename = uniqid('media_', true) . '.' . strtolower($ext);
+$ext = $mimeToExt[$mime];
+$filename = uniqid('media_', true) . '.' . $ext;
 $dest = $uploadDir . $filename;
 
 if (!move_uploaded_file($_FILES['file']['tmp_name'], $dest)) {

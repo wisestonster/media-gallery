@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/session.php';
+startSecureSession();
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET' && empty($_SESSION['user_id'])) {

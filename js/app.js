@@ -62,6 +62,13 @@ const confirmMsg     = document.getElementById("confirmMsg");
 const confirmCancel  = document.getElementById("confirmCancel");
 const confirmOk      = document.getElementById("confirmOk");
 
+/* ===== Helpers ===== */
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
 /* ===== Icons ===== */
 const ICONS = {
   video: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>`,
@@ -113,7 +120,7 @@ function formatDate(str) {
 }
 
 function buildThumb(item) {
-  if (item.type === "image") return `<img src="${item.thumb || item.src}" alt="${item.name}" loading="lazy" />`;
+  if (item.type === "image") return `<img src="${escapeHtml(item.thumb || item.src)}" alt="${escapeHtml(item.name)}" loading="lazy" />`;
   return `<div class="thumb-placeholder thumb-${item.type}">${ICONS[item.type] || ""}</div>`;
 }
 
@@ -142,11 +149,11 @@ function buildItem(item, idx) {
       </div>
     </div>
     <div class="item-info">
-      <div class="item-name" title="${item.name}">${item.name}</div>
+      <div class="item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
       <div class="item-meta">
         <span>${formatDate(item.date)}</span>
         ${metaExtra}
-        <span>${item.size}</span>
+        <span>${escapeHtml(item.size)}</span>
       </div>
     </div>
   `;
@@ -257,14 +264,14 @@ function renderLightbox() {
   stopMedia();
 
   if (item.type === "image") {
-    lightboxMedia.innerHTML = `<img src="${item.src}" alt="${item.name}" />`;
+    lightboxMedia.innerHTML = `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.name)}" />`;
   } else if (item.type === "video") {
-    lightboxMedia.innerHTML = `<video src="${item.src}" controls autoplay muted></video>`;
+    lightboxMedia.innerHTML = `<video src="${escapeHtml(item.src)}" controls autoplay muted></video>`;
   } else {
     lightboxMedia.innerHTML = `
       <div class="lightbox-audio-wrap">
         <div class="lightbox-audio-icon">${ICONS.audio}</div>
-        <audio src="${item.src}" controls autoplay></audio>
+        <audio src="${escapeHtml(item.src)}" controls autoplay></audio>
       </div>`;
   }
 
@@ -448,7 +455,7 @@ function handleFiles(files) {
   pendingFiles.forEach(f => {
     const chip = document.createElement("div");
     chip.className = "preview-chip";
-    chip.innerHTML = `${getFileIcon(f.type)}<span title="${f.name}">${f.name}</span>`;
+    chip.innerHTML = `${getFileIcon(f.type)}<span title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>`;
     uploadPreview.appendChild(chip);
   });
   uploadConfirm.disabled = false;

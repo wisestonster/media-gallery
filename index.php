@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/api/session.php';
+startSecureSession();
 $isLoggedIn = !empty($_SESSION['user_id']);
 $username   = $isLoggedIn ? htmlspecialchars($_SESSION['username']) : '';
 ?>
