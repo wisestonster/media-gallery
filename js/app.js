@@ -196,8 +196,8 @@ function buildItem(item, idx) {
     openLightbox(idx);
   });
 
-  // 본인 콘텐츠(또는 관리자)만 드래그해서 프로젝트로 옮길 수 있다
-  if (editable) {
+  // 프로젝트 이동(드래그)은 갤러리 정리 개념이라 로그인한 회원이면 누구나 가능
+  if (window.IS_LOGGED_IN) {
     el.draggable = true;
     el.addEventListener("dragstart", e => {
       e.dataTransfer.setData("text/media-id", String(item.id));
@@ -299,7 +299,7 @@ async function moveMediaToProject(mediaId, projectId) {
   const res = await apiFetch("api/media.php", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: item.id, name: item.name, tags: item.tags, date: item.date, project_id: projectId }),
+    body: JSON.stringify({ id: item.id, project_id: projectId }),
   });
   if (!res || !res.ok) return;
 

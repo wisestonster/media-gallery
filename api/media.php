@@ -82,6 +82,11 @@ if ($method === 'GET') {
             ':project_id' => $d['project_id'] ?? null,
             ':id'         => $d['id'],
         ]);
+    } elseif (array_key_exists('project_id', $d)) {
+        // 프로젝트 이동만: 콘텐츠 수정이 아닌 갤러리 정리이므로
+        // (즐겨찾기와 마찬가지로) 로그인한 회원이면 누구나 가능
+        $stmt = $db->prepare("UPDATE media SET project_id=:project_id WHERE id=:id");
+        $stmt->execute([':project_id' => $d['project_id'], ':id' => $d['id']]);
     } else {
         // 즐겨찾기 토글
         $stmt = $db->prepare("UPDATE media SET favorite=:fav WHERE id=:id");
