@@ -50,6 +50,12 @@ if (!empty($_SESSION['user_id'])) {
 
       <button type="submit" class="btn primary auth-submit" id="authSubmit">로그인</button>
     </form>
+
+    <div class="auth-divider"><span>또는</span></div>
+
+    <button type="button" class="btn secondary auth-submit" id="metamaskBtn">
+      메타마스크로 계속하기
+    </button>
   </div>
 
   <script>
@@ -104,6 +110,50 @@ if (!empty($_SESSION['user_id'])) {
         showError('서버 오류가 발생했습니다');
       } finally {
         authSubmit.disabled = false;
+      }
+    });
+
+    const metamaskBtn = document.getElementById('metamaskBtn');
+    metamaskBtn.addEventListener('click', async () => {
+      authError.hidden = true;
+
+      if (!window.ethereum) {
+        showError('메타마스크가 설치되어 있지 않습니다');
+        return;
+      }
+
+      metamaskBtn.disabled = true;
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const address = accounts[0];
+        if (!address) { showError('지갑 주소를 가져올 수 없습니다'); return; }
+
+        const nonceRes = await fetch('api/auth.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'wallet_nonce', wallet_address: address }),
+        });
+        const nonceData = await nonceRes.json();
+        if (!nonceRes.ok) { showError(nonceData.error); return; }
+
+        const signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [nonceData.message, address],
+        });
+
+        const loginRes = await fetch('api/auth.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'wallet_login', wallet_address: address, signature }),
+        });
+        const loginData = await loginRes.json();
+        if (!loginRes.ok) { showError(loginData.error); return; }
+
+        location.href = 'index.php';
+      } catch (err) {
+        showError(err?.code === 4001 ? '서명 요청을 취소했습니다' : '메타마스크 인증 중 오류가 발생했습니다');
+      } finally {
+        metamaskBtn.disabled = false;
       }
     });
   </script>

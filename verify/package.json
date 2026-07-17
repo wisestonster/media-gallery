@@ -1,0 +1,10 @@
+{
+  "name": "wallet-signature-verifier",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MetaMask(Ethereum) 서명 검증용 헬퍼. PHP에서 stdin으로 입력을 받아 stdout으로 결과를 반환한다.",
+  "main": "verify-sig.js",
+  "dependencies": {
+    "ethers": "^6.13.0"
+  }
+}

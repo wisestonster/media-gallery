@@ -1,6 +1,8 @@
 /* ===== State ===== */
 const state = {
   items: [],
+  projects: [],
+  currentProject: "all", // "all" | "unassigned" | project id
   filter: "all",
   query: "",
   sort: "date-desc",
@@ -20,6 +22,19 @@ const viewIcon        = document.getElementById("viewIcon");
 const searchToggle    = document.getElementById("searchToggle");
 const searchBar       = document.getElementById("searchBar");
 const searchInput     = document.getElementById("searchInput");
+
+const projectList      = document.getElementById("projectList");
+const newProjectBtn    = document.getElementById("newProjectBtn");
+const projectModal     = document.getElementById("projectModal");
+const projectBackdrop  = document.getElementById("projectBackdrop");
+const projectClose     = document.getElementById("projectClose");
+const projectCancel    = document.getElementById("projectCancel");
+const projectSave      = document.getElementById("projectSave");
+const projectModalTitle = document.getElementById("projectModalTitle");
+const projectEditId    = document.getElementById("projectEditId");
+const projectNameInput = document.getElementById("projectNameInput");
+const uploadProject    = document.getElementById("uploadProject");
+const editProject      = document.getElementById("editProject");
 
 const lightbox        = document.getElementById("lightbox");
 const lightboxMedia   = document.getElementById("lightboxMedia");
@@ -55,6 +70,13 @@ const editId         = document.getElementById("editId");
 const editName       = document.getElementById("editName");
 const editTags       = document.getElementById("editTags");
 const editDate       = document.getElementById("editDate");
+
+const commentList       = document.getElementById("commentList");
+const commentForm       = document.getElementById("commentForm");
+const commentInput      = document.getElementById("commentInput");
+const commentSubmit     = document.getElementById("commentSubmit");
+const commentGuestHint  = document.getElementById("commentGuestHint");
+const commentCount      = document.getElementById("commentCount");
 
 const confirmModal   = document.getElementById("confirmModal");
 const confirmBackdrop = document.getElementById("confirmBackdrop");
@@ -101,9 +123,12 @@ document.getElementById("logoutBtn")?.addEventListener("click", async () => {
 function getFiltered() {
   let items = state.items.filter(item => {
     const matchType = state.filter === "all" || item.type === state.filter;
+    const matchProject = state.currentProject === "all"
+      || (state.currentProject === "unassigned" && !item.project_id)
+      || item.project_id === state.currentProject;
     const q = state.query.toLowerCase();
     const matchQuery = !q || item.name.toLowerCase().includes(q) || item.tags.some(t => t.toLowerCase().includes(q));
-    return matchType && matchQuery;
+    return matchType && matchProject && matchQuery;
   });
   items.sort((a, b) => {
     if (state.sort === "date-desc") return new Date(b.date) - new Date(a.date);
@@ -115,12 +140,16 @@ function getFiltered() {
   return items;
 }
 
+function canModify(item) {
+  return window.IS_LOGGED_IN && (window.IS_ADMIN || item.user_id === window.CURRENT_USER_ID);
+}
+
 function formatDate(str) {
   return new Date(str).toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function buildThumb(item) {
-  if (item.type === "image") return `<img src="${escapeHtml(item.thumb || item.src)}" alt="${escapeHtml(item.name)}" loading="lazy" />`;
+  if (item.type === "image") return `<img src="${escapeHtml(item.thumb || item.src)}" alt="${escapeHtml(item.name)}" loading="lazy" draggable="false" />`;
   return `<div class="thumb-placeholder thumb-${item.type}">${ICONS[item.type] || ""}</div>`;
 }
 
@@ -136,6 +165,7 @@ function buildItem(item, idx) {
   const overlayIcon = item.type === "image" ? ICONS.eye : ICONS.play;
   const favHtml     = item.favorite ? `<span class="fav-badge">${ICONS.heart_filled}</span>` : "";
   const metaExtra   = item.duration ? `<span>• ${item.duration}</span>` : "";
+  const editable    = canModify(item);
 
   el.innerHTML = `
     <div class="item-thumb">
@@ -144,8 +174,10 @@ function buildItem(item, idx) {
       ${favHtml}
       <div class="item-overlay">
         <button class="overlay-btn" data-action="open" aria-label="열기">${overlayIcon}</button>
+        ${editable ? `
         <button class="overlay-btn overlay-sm" data-action="edit" aria-label="수정">${ICONS.edit}</button>
         <button class="overlay-btn overlay-sm danger" data-action="delete" aria-label="삭제">${ICONS.trash}</button>
+        ` : ""}
       </div>
     </div>
     <div class="item-info">
@@ -159,16 +191,21 @@ function buildItem(item, idx) {
   `;
 
   el.addEventListener("click", e => {
-    if (e.target.closest("[data-action='edit']"))   {
-      if (!window.IS_LOGGED_IN) { location.href = "login.php"; return; }
-      openEditModal(item); return;
-    }
-    if (e.target.closest("[data-action='delete']")) {
-      if (!window.IS_LOGGED_IN) { location.href = "login.php"; return; }
-      confirmDelete(item); return;
-    }
+    if (e.target.closest("[data-action='edit']"))   { openEditModal(item); return; }
+    if (e.target.closest("[data-action='delete']")) { confirmDelete(item); return; }
     openLightbox(idx);
   });
+
+  // 본인 콘텐츠(또는 관리자)만 드래그해서 프로젝트로 옮길 수 있다
+  if (editable) {
+    el.draggable = true;
+    el.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("text/media-id", String(item.id));
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("dragging");
+    });
+    el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  }
   el.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLightbox(idx); }
   });
@@ -176,6 +213,7 @@ function buildItem(item, idx) {
 }
 
 function render() {
+  renderProjectSidebar();
   const items = getFiltered();
   state.filteredItems = items;
   gallery.innerHTML = "";
@@ -191,6 +229,164 @@ function render() {
   const frag = document.createDocumentFragment();
   items.forEach((item, idx) => frag.appendChild(buildItem(item, idx)));
   gallery.appendChild(frag);
+}
+
+/* ===== Projects ===== */
+function projectCount(id) {
+  if (id === "all") return state.items.length;
+  if (id === "unassigned") return state.items.filter(i => !i.project_id).length;
+  return state.items.filter(i => i.project_id === id).length;
+}
+
+function buildProjectRow({ id, name, isVirtual }) {
+  const li = document.createElement("li");
+  li.className = "project-item" + (state.currentProject === id ? " active" : "");
+  li.dataset.projectId = id;
+
+  const btn = document.createElement("button");
+  btn.className = "project-btn";
+  btn.innerHTML = `<span class="project-name">${escapeHtml(name)}</span><span class="project-count">${projectCount(id)}</span>`;
+  btn.addEventListener("click", () => {
+    state.currentProject = id;
+    render();
+  });
+  li.appendChild(btn);
+
+  // "전체"를 제외한 모든 행(미분류 포함)은 미디어를 드래그해서 넣을 수 있는 드롭 대상
+  if (id !== "all" && window.IS_LOGGED_IN) {
+    li.addEventListener("dragover", e => {
+      if (!e.dataTransfer.types.includes("text/media-id")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+    li.addEventListener("dragleave", e => {
+      if (!li.contains(e.relatedTarget)) li.classList.remove("drag-over");
+    });
+    li.addEventListener("drop", e => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      const mediaId = e.dataTransfer.getData("text/media-id");
+      if (mediaId) moveMediaToProject(mediaId, id === "unassigned" ? null : id);
+    });
+  }
+
+  if (!isVirtual && window.IS_LOGGED_IN) {
+    const actions = document.createElement("div");
+    actions.className = "project-actions";
+    actions.innerHTML = `
+      <button data-action="rename" aria-label="이름 변경" title="이름 변경">${ICONS.edit}</button>
+      <button data-action="delete" class="danger" aria-label="삭제" title="삭제">${ICONS.trash}</button>
+    `;
+    actions.querySelector('[data-action="rename"]').addEventListener("click", e => {
+      e.stopPropagation();
+      openProjectModal({ id, name });
+    });
+    actions.querySelector('[data-action="delete"]').addEventListener("click", e => {
+      e.stopPropagation();
+      confirmDeleteProject({ id, name });
+    });
+    li.appendChild(actions);
+  }
+
+  return li;
+}
+
+async function moveMediaToProject(mediaId, projectId) {
+  const item = state.items.find(i => String(i.id) === String(mediaId));
+  if (!item || (item.project_id || null) === projectId) return;
+
+  const res = await apiFetch("api/media.php", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: item.id, name: item.name, tags: item.tags, date: item.date, project_id: projectId }),
+  });
+  if (!res || !res.ok) return;
+
+  const updated = await res.json();
+  const idx = state.items.findIndex(i => String(i.id) === String(mediaId));
+  if (idx !== -1) state.items[idx] = updated;
+  render();
+}
+
+function renderProjectSidebar() {
+  if (!projectList) return;
+  projectList.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  frag.appendChild(buildProjectRow({ id: "all", name: "전체", isVirtual: true }));
+  frag.appendChild(buildProjectRow({ id: "unassigned", name: "미분류", isVirtual: true }));
+  state.projects.forEach(p => frag.appendChild(buildProjectRow({ id: p.id, name: p.name })));
+  projectList.appendChild(frag);
+}
+
+function populateProjectSelects() {
+  [uploadProject, editProject].forEach(sel => {
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">미분류</option>` +
+      state.projects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("");
+    if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+  });
+}
+
+function openProjectModal(project = null) {
+  projectEditId.value = project ? project.id : "";
+  projectNameInput.value = project ? project.name : "";
+  projectModalTitle.textContent = project ? "프로젝트 이름 변경" : "새 프로젝트";
+  projectModal.hidden = false;
+  setTimeout(() => projectNameInput.focus(), 50);
+}
+
+function closeProjectModal() { projectModal.hidden = true; }
+
+newProjectBtn?.addEventListener("click", () => openProjectModal());
+projectClose.addEventListener("click", closeProjectModal);
+projectCancel.addEventListener("click", closeProjectModal);
+projectBackdrop.addEventListener("click", closeProjectModal);
+
+projectSave.addEventListener("click", async () => {
+  const name = projectNameInput.value.trim();
+  if (!name) { projectNameInput.focus(); return; }
+  const id = projectEditId.value;
+
+  projectSave.disabled = true;
+  const res = id
+    ? await apiFetch("api/projects.php", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      })
+    : await apiFetch("api/projects.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+  projectSave.disabled = false;
+  if (!res || !res.ok) return;
+
+  const data = await res.json();
+  if (id) {
+    const p = state.projects.find(p => p.id === id);
+    if (p) p.name = name;
+  } else {
+    state.projects.push({ id: data.id, name: data.name, created_at: data.created_at });
+  }
+  populateProjectSelects();
+  closeProjectModal();
+  render();
+});
+
+function confirmDeleteProject(project) {
+  showConfirm(`"${project.name}" 프로젝트를 삭제하시겠습니까? 프로젝트 내 미디어는 삭제되지 않고 미분류로 이동합니다.`, async () => {
+    const res = await apiFetch(`api/projects.php?id=${encodeURIComponent(project.id)}`, { method: "DELETE" });
+    if (!res || !res.ok) return;
+
+    state.projects = state.projects.filter(p => p.id !== project.id);
+    state.items.forEach(i => { if (i.project_id === project.id) i.project_id = null; });
+    if (state.currentProject === project.id) state.currentProject = "all";
+    populateProjectSelects();
+    render();
+  });
 }
 
 /* ===== Filters / Sort / View ===== */
@@ -256,6 +452,7 @@ function closeLightbox() {
   stopMedia();
   lightbox.hidden = true;
   document.body.style.overflow = "";
+  currentCommentsMediaId = null;
 }
 
 function renderLightbox() {
@@ -283,8 +480,17 @@ function renderLightbox() {
   lightboxFav.classList.toggle("active", item.favorite);
   lightboxFav.setAttribute("aria-label", item.favorite ? "즐겨찾기 해제" : "즐겨찾기");
 
+  const editable = canModify(item);
+  lightboxEdit.hidden = !editable;
+  lightboxDelete.hidden = !editable;
+
   lightboxPrev.style.visibility = state.lightboxIndex > 0 ? "visible" : "hidden";
   lightboxNext.style.visibility = state.lightboxIndex < state.filteredItems.length - 1 ? "visible" : "hidden";
+
+  if (currentCommentsMediaId !== item.id) {
+    currentCommentsMediaId = item.id;
+    loadComments(item.id);
+  }
 }
 
 lightboxClose.addEventListener("click", closeLightbox);
@@ -335,12 +541,83 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowRight") lightboxNext.click();
 });
 
+/* ===== Comments ===== */
+let currentCommentsMediaId = null;
+
+if (window.IS_LOGGED_IN) {
+  commentForm.hidden = false;
+} else {
+  commentGuestHint.hidden = false;
+}
+
+function renderComments(comments) {
+  commentCount.textContent = comments.length;
+  commentList.innerHTML = "";
+
+  if (comments.length === 0) {
+    commentList.innerHTML = `<li class="comment-empty">아직 댓글이 없습니다</li>`;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  comments.forEach(c => {
+    const isOwn = window.IS_LOGGED_IN && window.CURRENT_USER_ID === c.user_id;
+    const li = document.createElement("li");
+    li.className = "comment-item";
+    li.innerHTML = `
+      <div class="comment-head">
+        <span class="comment-author">${escapeHtml(c.username)}</span>
+        <span class="comment-date">${escapeHtml(c.created_at.split(" ")[0])}</span>
+        ${isOwn ? `<button class="comment-delete" aria-label="댓글 삭제" title="삭제">${ICONS.trash}</button>` : ""}
+      </div>
+      <p class="comment-body">${escapeHtml(c.content)}</p>
+    `;
+    if (isOwn) {
+      li.querySelector(".comment-delete").addEventListener("click", () => deleteComment(c.id));
+    }
+    frag.appendChild(li);
+  });
+  commentList.appendChild(frag);
+}
+
+async function loadComments(mediaId) {
+  commentList.innerHTML = `<li class="comment-empty">불러오는 중...</li>`;
+  const res = await apiFetch(`api/comments.php?media_id=${encodeURIComponent(mediaId)}`);
+  if (!res || !res.ok) { commentList.innerHTML = `<li class="comment-empty">댓글을 불러오지 못했습니다</li>`; return; }
+  renderComments(await res.json());
+}
+
+async function deleteComment(id) {
+  const res = await apiFetch(`api/comments.php?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res || !res.ok) return;
+  if (currentCommentsMediaId) loadComments(currentCommentsMediaId);
+}
+
+commentForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const content = commentInput.value.trim();
+  if (!content || !currentCommentsMediaId) return;
+
+  commentSubmit.disabled = true;
+  const res = await apiFetch("api/comments.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_id: currentCommentsMediaId, content }),
+  });
+  commentSubmit.disabled = false;
+  if (!res || !res.ok) return;
+
+  commentInput.value = "";
+  loadComments(currentCommentsMediaId);
+});
+
 /* ===== Edit Modal ===== */
 function openEditModal(item) {
   editId.value    = item.id;
   editName.value  = item.name;
   editTags.value  = item.tags.join(", ");
   editDate.value  = item.date;
+  editProject.value = item.project_id || "";
   editModal.hidden = false;
   setTimeout(() => editName.focus(), 50);
 }
@@ -356,13 +633,14 @@ editSave.addEventListener("click", async () => {
   const name = editName.value.trim();
   const tags = editTags.value.split(",").map(t => t.trim()).filter(Boolean);
   const date = editDate.value;
+  const project_id = editProject.value || null;
   if (!name) { editName.focus(); return; }
 
   editSave.disabled = true;
   const res = await apiFetch("api/media.php", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, name, tags, date }),
+    body: JSON.stringify({ id, name, tags, date, project_id }),
   });
   editSave.disabled = false;
   if (!res || !res.ok) return;
@@ -423,7 +701,13 @@ async function confirmDelete(item) {
 /* ===== Upload Modal ===== */
 let pendingFiles = [];
 
-uploadBtn?.addEventListener("click", () => { uploadModal.hidden = false; });
+uploadBtn?.addEventListener("click", () => {
+  uploadModal.hidden = false;
+  if (uploadProject) {
+    uploadProject.value = (state.currentProject !== "all" && state.currentProject !== "unassigned")
+      ? state.currentProject : "";
+  }
+});
 uploadClose.addEventListener("click", closeUpload);
 uploadCancel.addEventListener("click", closeUpload);
 uploadBackdrop.addEventListener("click", closeUpload);
@@ -490,6 +774,7 @@ uploadConfirm.addEventListener("click", async () => {
       date: new Date().toISOString().split("T")[0],
       size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
       tags: [], favorite: false,
+      project_id: uploadProject?.value || null,
     };
     const addRes = await apiFetch("api/media.php", {
       method: "POST",
@@ -520,13 +805,18 @@ if (!window.IS_LOGGED_IN) {
 /* ===== Init ===== */
 async function init() {
   try {
-    const res = await apiFetch("api/media.php");
-    if (!res) return;
-    state.items = await res.json();
+    const [mediaRes, projectsRes] = await Promise.all([
+      apiFetch("api/media.php"),
+      apiFetch("api/projects.php"),
+    ]);
+    state.items    = mediaRes ? await mediaRes.json() : [];
+    state.projects = projectsRes ? await projectsRes.json() : [];
   } catch (e) {
     console.error("미디어 로드 실패:", e);
     state.items = [];
+    state.projects = [];
   }
+  populateProjectSelects();
   render();
 }
 

@@ -17,6 +17,12 @@ function getDb(): PDO {
             created_at TEXT  DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS projects (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS media (
             id         TEXT    PRIMARY KEY,
             type       TEXT    NOT NULL,
@@ -28,9 +34,66 @@ function getDb(): PDO {
             duration   TEXT,
             tags       TEXT    NOT NULL DEFAULT '[]',
             favorite   INTEGER NOT NULL DEFAULT 0,
+            project_id TEXT,
             created_at TEXT    DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS comments (
+            id         TEXT    PRIMARY KEY,
+            media_id   TEXT    NOT NULL,
+            user_id    INTEGER NOT NULL,
+            username   TEXT    NOT NULL,
+            content    TEXT    NOT NULL,
+            created_at TEXT    DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wallet_nonces (
+            wallet_address TEXT PRIMARY KEY,
+            nonce          TEXT NOT NULL,
+            message        TEXT NOT NULL,
+            created_at     TEXT DEFAULT (datetime('now'))
+        );
     ");
+
+    // 기존 DB(project_id 컬럼 도입 이전)를 위한 마이그레이션
+    $cols = $db->query("PRAGMA table_info(media)")->fetchAll();
+    $hasProjectId = false;
+    foreach ($cols as $col) {
+        if ($col['name'] === 'project_id') { $hasProjectId = true; break; }
+    }
+    if (!$hasProjectId) {
+        $db->exec("ALTER TABLE media ADD COLUMN project_id TEXT");
+    }
+
+    // 기존 DB(user_id 컬럼 도입 이전)를 위한 마이그레이션.
+    // 소유자가 없는(NULL) 기존 미디어는 관리자만 수정/삭제할 수 있다.
+    $hasUserId = false;
+    foreach ($cols as $col) {
+        if ($col['name'] === 'user_id') { $hasUserId = true; break; }
+    }
+    if (!$hasUserId) {
+        $db->exec("ALTER TABLE media ADD COLUMN user_id INTEGER");
+    }
+
+    // 기존 DB(wallet_address 컬럼 도입 이전)를 위한 마이그레이션
+    $userCols = $db->query("PRAGMA table_info(users)")->fetchAll();
+    $hasWalletAddress = false;
+    foreach ($userCols as $col) {
+        if ($col['name'] === 'wallet_address') { $hasWalletAddress = true; break; }
+    }
+    if (!$hasWalletAddress) {
+        $db->exec("ALTER TABLE users ADD COLUMN wallet_address TEXT");
+    }
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_wallet_address ON users(wallet_address) WHERE wallet_address IS NOT NULL");
+
+    // 기존 DB(role 컬럼 도입 이전)를 위한 마이그레이션
+    $hasRole = false;
+    foreach ($userCols as $col) {
+        if ($col['name'] === 'role') { $hasRole = true; break; }
+    }
+    if (!$hasRole) {
+        $db->exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+    }
 
     // 최초 실행 시 샘플 데이터 삽입
     $count = $db->query("SELECT COUNT(*) FROM media")->fetchColumn();
@@ -39,6 +102,24 @@ function getDb(): PDO {
     }
 
     return $db;
+}
+
+// 계정이 하나도 없는 상태(최초 실행)에서 가입하는 사용자는 자동으로 관리자가 된다.
+// 그 외에는 일반 사용자로 가입하며, 이후 관리자 대시보드에서 권한을 조정할 수 있다.
+function insertUser(PDO $db, string $username, string $passwordHash, ?string $walletAddress = null): array {
+    $isFirstUser = (int)$db->query("SELECT COUNT(*) FROM users")->fetchColumn() === 0;
+    $role = $isFirstUser ? 'admin' : 'user';
+
+    $stmt = $db->prepare("INSERT INTO users (username, password, wallet_address, role) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$username, $passwordHash, $walletAddress, $role]);
+
+    return ['id' => (int)$db->lastInsertId(), 'role' => $role];
+}
+
+function isAdminUser(PDO $db, int $userId): bool {
+    $stmt = $db->prepare("SELECT role FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    return $stmt->fetchColumn() === 'admin';
 }
 
 function seedMedia(PDO $db): void {
