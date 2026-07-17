@@ -26,8 +26,8 @@ $username = htmlspecialchars($me['username']);
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>관리자 대시보드 — 미디어 갤러리</title>
-  <link rel="stylesheet" href="css/style.css?v=<?= filemtime(__DIR__ . '/css/style.css') ?>" />
-  <link rel="stylesheet" href="css/admin.css?v=<?= filemtime(__DIR__ . '/css/admin.css') ?>" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/admin.css" />
 </head>
 <body>
 
@@ -122,6 +122,6 @@ $username = htmlspecialchars($me['username']);
     </div>
   </div>
 
-  <script src="js/admin.js?v=<?= filemtime(__DIR__ . '/js/admin.js') ?>"></script>
+  <script src="js/admin.js"></script>
 </body>
 </html>

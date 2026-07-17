@@ -18,7 +18,7 @@ if ($isLoggedIn) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>미디어 갤러리</title>
-  <link rel="stylesheet" href="css/style.css?v=<?= filemtime(__DIR__ . '/css/style.css') ?>" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
@@ -331,6 +331,6 @@ if ($isLoggedIn) {
     window.CURRENT_USER_ID = <?= $isLoggedIn ? (int)$_SESSION['user_id'] : 'null' ?>;
     window.IS_ADMIN = <?= $isAdmin ? 'true' : 'false' ?>;
   </script>
-  <script src="js/app.js?v=<?= filemtime(__DIR__ . '/js/app.js') ?>"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
